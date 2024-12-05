@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DhifCraftBeta</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+    }
+    canvas {
+      display: block;
+    }
+    #ui {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      z-index: 10;
+      background: rgba(255, 255, 255, 0.8);
+      padding: 10px;
+      border-radius: 5px;
+      font-family: Arial, sans-serif;
+    }
+    #loading {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-family: Arial, sans-serif;
+      font-size: 2em;
+      color: #333;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="ui">
+    <button id="saveButton">Salvar Mundo</button>
+    <input type="file" id="openFile" style="display: none;" />
+    <button id="openButton">Abrir Mundo</button>
+  </div>
+  <div id="loading">Renderizando...</div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/110/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.110/examples/js/controls/PointerLockControls.js"></script>
+  <script>
+    const loadingScreen = document.getElementById('loading');
+    loadingScreen.style.display = 'block';
+
+    const blocks = [];
+    const blockData = [];
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x87CEEB);
+
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.set(0, 5, 10);
+
+    const renderer = new THREE.WebGLRenderer();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    const light = new THREE.DirectionalLight(0xffffff, 1);
+    light.position.set(10, 20, 15);
+    scene.add(light);
+
+    const textureLoader = new THREE.TextureLoader();
+
+    const dirtTexture = textureLoader.load('https://cdn.pixabay.com/photo/2020/12/10/12/10/minecraft-5820118_960_720.png');
+    const grassTexture = textureLoader.load('https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSaPvkZFybo_0lHqbp6Ti6EMyRjsARBXitsmg&s');
+    const stoneTexture = textureLoader.load('https://media.istockphoto.com/id/1300167322/pt/vetorial/pixel-minecraft-style-cobblestone-block-background-concept-of-game-pixelated-seamless.jpg?s=170667a&w=0&k=20&c=0Q9R7Q-qZevh6MnrgNP7otEsQciHfgJf8L21lMvX914=');
+
+    let velocity = new THREE.Vector3();
+    let direction = new THREE.Vector3();
+    let speed = 0.1; // Velocidade corrigida
+    let isOnGround = true;
+
+    const controls = new THREE.PointerLockControls(camera, document.body);
+    document.body.addEventListener('click', () => controls.lock());
+
+    function createBlock(x, y, z, type = 'dirt') {
+      const geometry = new THREE.BoxGeometry(2, 2, 2);
+      let material;
+
+      if (type === 'dirt') {
+        material = new THREE.MeshLambertMaterial({ map: dirtTexture });
+      } else if (type === 'grass') {
+        const grassMaterialArray = [
+          new THREE.MeshLambertMaterial({ map: dirtTexture }),
+          new THREE.MeshLambertMaterial({ map: dirtTexture }),
+          new THREE.MeshLambertMaterial({ map: grassTexture }),
+          new THREE.MeshLambertMaterial({ map: dirtTexture }),
+          new THREE.MeshLambertMaterial({ map: dirtTexture }),
+          new THREE.MeshLambertMaterial({ map: dirtTexture }),
+        ];
+        material = grassMaterialArray;
+      } else if (type === 'stone') {
+        material = new THREE.MeshLambertMaterial({ map: stoneTexture });
+      }
+
+      const block = new THREE.Mesh(geometry, material);
+      block.position.set(x, y, z);
+      scene.add(block);
+      blocks.push(block);
+      blockData.push({ x, y, z, type });
+    }
+
+    function generateWorld() {
+      const size = 10;
+      for (let x = -size; x <= size; x++) {
+        for (let z = -size; z <= size; z++) {
+          createBlock(x * 2, 0, z * 2, 'dirt');
+          const random = Math.random();
+          if (random > 0.8) {
+            createBlock(x * 2, 2, z * 2, 'grass');
+          } else if (random > 0.6) {
+            createBlock(x * 2, 2, z * 2, 'stone');
+          }
+        }
+      }
+    }
+
+    const keys = {};
+    document.addEventListener('keydown', (e) => (keys[e.key.toLowerCase()] = true));
+    document.addEventListener('keyup', (e) => (keys[e.key.toLowerCase()] = false));
+
+    function updateMovement() {
+      direction.set(0, 0, 0);
+
+      if (keys['w']) direction.z -= 1;
+      if (keys['s']) direction.z += 1;
+      if (keys['a']) direction.x -= 1;
+      if (keys['d']) direction.x += 1;
+
+      direction.normalize();
+
+      if (direction.length() > 0) {
+        const forward = new THREE.Vector3();
+        controls.getDirection(forward);
+        forward.y = 0;
+        forward.normalize();
+
+        const right = new THREE.Vector3().crossVectors(camera.up, forward).normalize();
+        camera.position.addScaledVector(forward, direction.z * speed);
+        camera.position.addScaledVector(right, direction.x * speed);
+      }
+
+      if (camera.position.y > 2 || velocity.y > 0) {
+        velocity.y -= 0.01;
+        camera.position.y += velocity.y;
+      }
+
+      if (camera.position.y < 2) {
+        camera.position.y = 2;
+        velocity.y = 0;
+        isOnGround = true;
+      }
+
+      if (keys[' '] && isOnGround) {
+        velocity.y = 0.3;
+        isOnGround = false;
+      }
+    }
+
+    function saveWorld() {
+      const blob = new Blob([JSON.stringify(blockData)], { type: 'application/json' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = 'mundo.dhworld';
+      link.click();
+    }
+
+    function placeBlock() {
+      const raycaster = new THREE.Raycaster();
+      const mouse = new THREE.Vector2(0, 0);
+      raycaster.update();
+
+      const intersects = raycaster.intersectObjects(blocks);
+      if (intersects.length > 0) {
+        const blockPosition = intersects[0].object.position;
+        const newX = Math.floor(blockPosition.x / 2) * 2;
+        const newZ = Math.floor(blockPosition.z / 2) * 2;
+        createBlock(newX, blockPosition.y + 2, newZ, 'dirt');
+      }
+    }
+
+    document.getElementById('saveButton').addEventListener('click', saveWorld);
+
+    document.getElementById('openButton').addEventListener('click', () => {
+      const fileInput = document.getElementById('openFile');
+      fileInput.click();
+    });
+
+    document.getElementById('openFile').addEventListener('change', (event) => {
+      const reader = new FileReader();
+      reader.onload = function (e) {
+        const worldData = JSON.parse(e.target.result);
+        worldData.forEach(block => {
+          createBlock(block.x, block.y, block.z, block.type);
+        });
+      };
+      reader.readAsText(event.target.files[0]);
+    });
+
+    window.addEventListener('mousedown', (e) => {
+      if (e.button === 0) { // Clique esquerdo
+        placeBlock();
+      }
+    });
+
+    function animate() {
+      requestAnimationFrame(animate);
+      updateMovement();
+      renderer.render(scene, camera);
+    }
+
+    setTimeout(() => {
+      generateWorld();
+      loadingScreen.style.display = 'none';
+      animate();
+    }, 1000);
+  </script>
+</body>
+</html>
